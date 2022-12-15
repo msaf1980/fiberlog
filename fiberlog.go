@@ -74,6 +74,7 @@ func New(config ...Config) fiber.Handler {
 
 		dumploggerCtx := sublog.With().
 			// Str("pid", pid).
+			Uint64("id", c.Context().ID()).
 			Int("status", code).
 			Str("method", c.Method()).
 			Str("path", c.Path()).
