@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/gofiber/fiber"
+	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -19,58 +19,88 @@ type Config struct {
 	//
 	// Default: log.Logger.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	Logger *zerolog.Logger
+
+	UserAgent     bool
+	TagReqHeader  []string
+	TagRespHeader []string
 }
 
 // New is a zerolog middleware that allows you to pass a Config.
 //
-// 	app := fiber.New()
+//	app := fiber.New()
 //
-// 	// Without config
-// 	app.Use(New())
+//	// Without config
+//	app.Use(New())
 //
-// 	// With config
-// 	app.Use(New(Config{Logger: &zerolog.New(os.Stdout)}))
+//	// With config
+//	app.Use(New(Config{Logger: &zerolog.New(os.Stdout)}))
 func New(config ...Config) fiber.Handler {
-	var conf Config
+	var cfg Config
 	if len(config) > 0 {
-		conf = config[0]
+		cfg = config[0]
 	}
+
+	// Set PID once
+	// pid := strconv.Itoa(os.Getpid())
 
 	var sublog zerolog.Logger
-	if conf.Logger == nil {
+	if cfg.Logger == nil {
 		sublog = log.Logger.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	} else {
-		sublog = *conf.Logger
+		sublog = *cfg.Logger
 	}
 
-	return func(c *fiber.Ctx) {
-		// Don't execute the middleware if Next returns true
-		if conf.Next != nil && conf.Next(c) {
-			c.Next()
-			return
+	return func(c *fiber.Ctx) error {
+		// Don't execute middleware if Next returns true
+		if cfg.Next != nil && cfg.Next(c) {
+			return c.Next()
 		}
 
 		start := time.Now()
 
-		// handle request
-		c.Next()
+		// Handle request, store err for logging
+		chainErr := c.Next()
 
-		msg := "Request"
-		if err := c.Error(); err != nil {
-			msg = err.Error()
+		if chainErr != nil {
+			if err := c.App().ErrorHandler(c, chainErr); err != nil {
+				_ = c.SendStatus(fiber.StatusInternalServerError)
+			}
 		}
 
-		code := c.Fasthttp.Response.StatusCode()
+		// Set latency stop time
+		stop := time.Now()
 
-		dumplogger := sublog.With().
+		code := c.Response().StatusCode()
+
+		dumploggerCtx := sublog.With().
+			// Str("pid", pid).
 			Int("status", code).
 			Str("method", c.Method()).
 			Str("path", c.Path()).
 			Str("ip", c.IP()).
-			Str("latency", time.Since(start).String()).
-			Str("user-agent", c.Get(fiber.HeaderUserAgent)).
-			Logger()
+			Dur("latency", stop.Sub(start))
 
+		for _, k := range cfg.TagReqHeader {
+			if v := c.Get(k); v != "" {
+				dumploggerCtx = dumploggerCtx.Str(k, v)
+			}
+		}
+		for _, k := range cfg.TagRespHeader {
+			if v := c.GetRespHeader(k); v != "" {
+				dumploggerCtx = dumploggerCtx.Str(k, v)
+			}
+		}
+
+		if cfg.UserAgent {
+			dumploggerCtx = dumploggerCtx.Str("user-agent", c.Get(fiber.HeaderUserAgent))
+		}
+
+		msg := ""
+		if chainErr != nil {
+			msg = chainErr.Error()
+		}
+
+		dumplogger := dumploggerCtx.Logger()
 		switch {
 		case code >= fiber.StatusBadRequest && code < fiber.StatusInternalServerError:
 			dumplogger.Warn().Msg(msg)
@@ -79,5 +109,7 @@ func New(config ...Config) fiber.Handler {
 		default:
 			dumplogger.Info().Msg(msg)
 		}
+
+		return nil
 	}
 }

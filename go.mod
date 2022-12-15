@@ -1,8 +1,8 @@
-module github.com/dre1080/fiberlog
+module github.com/msaf1980/fiberlog
 
 go 1.14
 
 require (
-	github.com/gofiber/fiber v1.12.0
-	github.com/rs/zerolog v1.19.0
+	github.com/gofiber/fiber/v2 v2.40.1
+	github.com/rs/zerolog v1.28.0
 )
