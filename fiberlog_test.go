@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog"
+	"github.com/valyala/fasthttp"
 )
 
 func testGetReq(t *testing.T, address, uri string, statusCode int) {
@@ -41,6 +42,9 @@ func TestNew(t *testing.T) {
 		},
 		TagReqHeader:  []string{"host"},
 		TagRespHeader: []string{"content-type"},
+		Username:      true,
+		UserAgent:     true,
+		ForwardedFor:  true,
 	}))
 
 	app.Get("/ok", func(c *fiber.Ctx) error {
@@ -69,4 +73,80 @@ func TestNew(t *testing.T) {
 	testGetReq(t, "http://127.0.0.1:3000", "/warn", 422)
 	testGetReq(t, "http://127.0.0.1:3000", "/err", http.StatusInternalServerError)
 	testGetReq(t, "http://127.0.0.1:3000", "/", http.StatusNotFound)
+}
+
+func BenchmarkStatic(b *testing.B) {
+	logger := zerolog.New(nil)
+	app := fiber.New()
+
+	app.Use(New(Config{
+		Logger: &logger,
+		Next: func(ctx *fiber.Ctx) bool {
+			return false
+		},
+	}))
+
+	app.Get("/", func(c *fiber.Ctx) error {
+		c.SendString("ok")
+		return nil
+	})
+
+	h := app.Handler()
+
+	fctx := &fasthttp.RequestCtx{}
+	fctx.Request.Header.SetMethod(fiber.MethodGet)
+	fctx.Request.SetRequestURI("/")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		h(fctx)
+	}
+
+	if fctx.Response.Header.StatusCode() != http.StatusOK {
+		b.Fail()
+	}
+}
+
+func BenchmarkCustom(b *testing.B) {
+	logger := zerolog.New(nil)
+	app := fiber.New()
+
+	app.Use(New(Config{
+		Logger: &logger,
+		Next: func(ctx *fiber.Ctx) bool {
+			return false
+		},
+		// TagReqHeader:  []string{"host"},
+		TagRespHeader: []string{"content-type"},
+		Username:      true,
+		UserAgent:     true,
+		ForwardedFor:  true,
+		Tags:          []string{"test"},
+	}))
+
+	app.Get("/", func(c *fiber.Ctx) error {
+		c.Context().SetUserValue("username", "test")
+		c.Context().SetUserValue("test", "test")
+		c.SendString("ok")
+		return nil
+	})
+
+	h := app.Handler()
+
+	fctx := &fasthttp.RequestCtx{}
+	fctx.Request.Header.SetMethod(fiber.MethodGet)
+	fctx.Request.SetRequestURI("/")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		h(fctx)
+	}
+
+	if fctx.Response.Header.StatusCode() != http.StatusOK {
+		b.Fail()
+	}
 }

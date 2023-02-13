@@ -1,8 +1,10 @@
 package fiberlog
 
 import (
+	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -20,9 +22,12 @@ type Config struct {
 	// Default: log.Logger.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	Logger *zerolog.Logger
 
-	UserAgent     bool
+	Username      bool // log from context user parameter username
+	UserAgent     bool // log user agent
+	ForwardedFor  bool // log X-Forwarded-For (if behing a balancer) or repote IP
 	TagReqHeader  []string
 	TagRespHeader []string
+	Tags          []string // log from context user parameter with keys from tags slice
 }
 
 // New is a zerolog middleware that allows you to pass a Config.
@@ -71,16 +76,42 @@ func New(config ...Config) fiber.Handler {
 		stop := time.Now()
 
 		code := c.Response().StatusCode()
+		// X-Request-ID from header
+		rid := c.Get(fiber.HeaderXRequestID)
+		if rid == "" {
+			rid = strconv.FormatUint(c.Context().ID(), 10)
+			c.Set(fiber.HeaderXRequestID, rid)
+		}
 
+		remoteIP := c.IP()
 		dumploggerCtx := sublog.With().
 			// Str("pid", pid).
-			Uint64("id", c.Context().ID()).
+			Str("tag", "request").
+			Str("id", rid).
 			Int("status", code).
 			Str("method", c.Method()).
 			Str("path", c.Path()).
-			Str("ip", c.IP()).
+			Str("remote_ip", remoteIP).
+			Str("protocol", c.Protocol()).
+			Str("host", c.Hostname()).
 			Dur("latency", stop.Sub(start))
 
+		if cfg.ForwardedFor {
+			forwarded := c.Get(fiber.HeaderXForwardedFor)
+			if forwarded == "" {
+				forwarded = remoteIP
+			}
+			dumploggerCtx = dumploggerCtx.Str("forwarded_for", forwarded)
+		}
+		if cfg.Username {
+			i := c.Context().UserValue("username")
+			if username, ok := i.(string); ok {
+				dumploggerCtx = dumploggerCtx.Str("username", username)
+			}
+		}
+		if cfg.UserAgent {
+			dumploggerCtx = dumploggerCtx.Str("user-agent", c.Get(fiber.HeaderUserAgent))
+		}
 		for _, k := range cfg.TagReqHeader {
 			if v := c.Get(k); v != "" {
 				dumploggerCtx = dumploggerCtx.Str(k, v)
@@ -91,9 +122,38 @@ func New(config ...Config) fiber.Handler {
 				dumploggerCtx = dumploggerCtx.Str(k, v)
 			}
 		}
-
-		if cfg.UserAgent {
-			dumploggerCtx = dumploggerCtx.Str("user-agent", c.Get(fiber.HeaderUserAgent))
+		for _, k := range cfg.Tags {
+			i := c.Context().UserValue(k)
+			if i != nil {
+				switch v := i.(type) {
+				case string:
+					dumploggerCtx = dumploggerCtx.Str(k, v)
+				case []string:
+					dumploggerCtx = dumploggerCtx.Strs(k, v)
+				case int64:
+					dumploggerCtx = dumploggerCtx.Int64(k, v)
+				case uint64:
+					dumploggerCtx = dumploggerCtx.Uint64(k, v)
+				case float64:
+					dumploggerCtx = dumploggerCtx.Float64(k, v)
+				case time.Duration:
+					dumploggerCtx = dumploggerCtx.Dur(k, v)
+				case bool:
+					dumploggerCtx = dumploggerCtx.Bool(k, v)
+				case []error:
+					dumploggerCtx = dumploggerCtx.Errs(k, v)
+				case *zerolog.Event:
+					dumploggerCtx = dumploggerCtx.Dict(k, v)
+				case zerolog.LogArrayMarshaler:
+					dumploggerCtx = dumploggerCtx.Array(k, v)
+				case zerolog.LogObjectMarshaler:
+					dumploggerCtx = dumploggerCtx.EmbedObject(v)
+				case fmt.Stringer:
+					dumploggerCtx = dumploggerCtx.Str(k, v.String())
+				default:
+					dumploggerCtx = dumploggerCtx.Str(k, fmt.Sprintf("<%T>", i))
+				}
+			}
 		}
 
 		msg := ""
