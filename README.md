@@ -17,8 +17,8 @@ go get -u github.com/msaf1980/fiberlog
 package main
 
 import (
-  "github.com/gofiber/fiber"
-  "github.com/dre1080/fiberlog"
+  "github.com/gofiber/fiber/v2"
+  "github.com/msaf1980/fiberlog"
 )
 
 func main() {
