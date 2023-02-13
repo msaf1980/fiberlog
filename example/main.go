@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/msaf1980/fiberlog"
 	"github.com/rs/zerolog"
 )
@@ -15,6 +16,15 @@ func main() {
 	// Default
 	// app.Use(fiberlog.New())
 
+	if os.Getenv("FIBERLOG_BASICAUTH") != "" {
+		app.Use(basicauth.New(basicauth.Config{
+			Users: map[string]string{
+				"test":  "password",
+				"admin": "123456",
+			},
+		}))
+	}
+
 	// Custom Config
 	app.Use(fiberlog.New(fiberlog.Config{
 		Logger: &logger,
@@ -22,7 +32,9 @@ func main() {
 			// skip if we hit /private
 			return ctx.Path() == "/private"
 		},
-		TagReqHeader:  []string{"host"},
+		LogHost:     true,
+		LogUsername: "username",
+		// TagReqHeader:  []string{"host"},
 		TagRespHeader: []string{"content-type"},
 	}))
 

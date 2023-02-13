@@ -22,12 +22,13 @@ type Config struct {
 	// Default: log.Logger.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	Logger *zerolog.Logger
 
-	Username      bool // log from context user parameter username
-	UserAgent     bool // log user agent
-	ForwardedFor  bool // log X-Forwarded-For (if behing a balancer) or repote IP
-	TagReqHeader  []string
-	TagRespHeader []string
-	Tags          []string // log from context user parameter with keys from tags slice
+	LogUsername     string // log from context username parameter (by default set to 'username'
+	LogUserAgent    bool   // log user agent
+	LogForwardedFor bool   // log X-Forwarded-For (if behing a balancer) or repote IP
+	LogHost         bool   // log incommig host (in request)
+	TagReqHeader    []string
+	TagRespHeader   []string
+	Tags            []string // log from context user parameter with keys from tags slice
 }
 
 // New is a zerolog middleware that allows you to pass a Config.
@@ -86,30 +87,32 @@ func New(config ...Config) fiber.Handler {
 		remoteIP := c.IP()
 		dumploggerCtx := sublog.With().
 			// Str("pid", pid).
-			Str("tag", "request").
 			Str("id", rid).
-			Int("status", code).
+			Str("logger", "request").
+			Str("protocol", c.Protocol()).
 			Str("method", c.Method()).
 			Str("path", c.Path()).
+			Int("status", code).
 			Str("remote_ip", remoteIP).
-			Str("protocol", c.Protocol()).
-			Str("host", c.Hostname()).
 			Dur("latency", stop.Sub(start))
 
-		if cfg.ForwardedFor {
+		if cfg.LogHost {
+			dumploggerCtx = dumploggerCtx.Str("host", c.Hostname())
+		}
+		if cfg.LogForwardedFor {
 			forwarded := c.Get(fiber.HeaderXForwardedFor)
 			if forwarded == "" {
 				forwarded = remoteIP
 			}
 			dumploggerCtx = dumploggerCtx.Str("forwarded_for", forwarded)
 		}
-		if cfg.Username {
-			i := c.Context().UserValue("username")
+		if cfg.LogUsername != "" {
+			i := c.Locals(cfg.LogUsername)
 			if username, ok := i.(string); ok {
 				dumploggerCtx = dumploggerCtx.Str("username", username)
 			}
 		}
-		if cfg.UserAgent {
+		if cfg.LogUserAgent {
 			dumploggerCtx = dumploggerCtx.Str("user-agent", c.Get(fiber.HeaderUserAgent))
 		}
 		for _, k := range cfg.TagReqHeader {
@@ -123,7 +126,7 @@ func New(config ...Config) fiber.Handler {
 			}
 		}
 		for _, k := range cfg.Tags {
-			i := c.Context().UserValue(k)
+			i := c.Locals(k)
 			if i != nil {
 				switch v := i.(type) {
 				case string:

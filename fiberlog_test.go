@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/rs/zerolog"
 	"github.com/valyala/fasthttp"
 )
@@ -40,11 +41,12 @@ func TestNew(t *testing.T) {
 			// skip if we hit /private
 			return ctx.Path() == "/private"
 		},
-		TagReqHeader:  []string{"host"},
-		TagRespHeader: []string{"content-type"},
-		Username:      true,
-		UserAgent:     true,
-		ForwardedFor:  true,
+		// TagReqHeader:    []string{"host"},
+		TagRespHeader:   []string{"content-type"},
+		LogUsername:     "username",
+		LogUserAgent:    true,
+		LogForwardedFor: true,
+		LogHost:         true,
 	}))
 
 	app.Get("/ok", func(c *fiber.Ctx) error {
@@ -109,9 +111,35 @@ func BenchmarkStatic(b *testing.B) {
 	}
 }
 
-func BenchmarkCustom(b *testing.B) {
+// func unsafeString(b []byte) string {
+// 	return *(*string)(unsafe.Pointer(&b))
+// }
+
+// func basicAuthBase64(username, password string) string {
+// 	sizeCred := len(username) + len(password) + 1
+// 	sizeEncoded := base64.StdEncoding.EncodedLen(sizeCred)
+
+// 	buf := make([]byte, sizeCred+sizeEncoded+6)
+
+// 	copy(buf, username)
+// 	buf[len(username)] = ':'
+// 	copy(buf[len(username)+1:], password)
+
+// 	copy(buf[sizeCred:], "basic ")
+// 	base64.StdEncoding.Encode(buf[sizeCred+6:], buf[:sizeCred])
+
+// 	return unsafeString(buf[sizeCred:])
+// }
+
+func BenchmarkCustomWithAuth(b *testing.B) {
 	logger := zerolog.New(nil)
 	app := fiber.New()
+
+	app.Use(basicauth.New(basicauth.Config{
+		Users: map[string]string{
+			"john": "doe",
+		},
+	}))
 
 	app.Use(New(Config{
 		Logger: &logger,
@@ -119,15 +147,14 @@ func BenchmarkCustom(b *testing.B) {
 			return false
 		},
 		// TagReqHeader:  []string{"host"},
-		TagRespHeader: []string{"content-type"},
-		Username:      true,
-		UserAgent:     true,
-		ForwardedFor:  true,
-		Tags:          []string{"test"},
+		TagRespHeader:   []string{"content-type"},
+		LogUsername:     "username",
+		LogUserAgent:    true,
+		LogForwardedFor: true,
+		Tags:            []string{"test"},
 	}))
 
 	app.Get("/", func(c *fiber.Ctx) error {
-		c.Context().SetUserValue("username", "test")
 		c.Context().SetUserValue("test", "test")
 		c.SendString("ok")
 		return nil
@@ -138,6 +165,8 @@ func BenchmarkCustom(b *testing.B) {
 	fctx := &fasthttp.RequestCtx{}
 	fctx.Request.Header.SetMethod(fiber.MethodGet)
 	fctx.Request.SetRequestURI("/")
+
+	fctx.Request.Header.Set(fiber.HeaderAuthorization, "basic am9objpkb2U=") // john:doe
 
 	b.ReportAllocs()
 	b.ResetTimer()
