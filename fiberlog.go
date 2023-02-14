@@ -12,6 +12,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+var pid string = strconv.Itoa(os.Getpid())
+
 // Config defines the config for logger middleware.
 type Config struct {
 	// Next defines a function to skip this middleware.
@@ -22,6 +24,7 @@ type Config struct {
 	// Default: log.Logger.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	Logger *zerolog.Logger
 
+	TimeLayout      string
 	LogUsername     string // log from context username parameter (by default set to 'username'
 	LogUserAgent    bool   // log user agent
 	LogForwardedFor bool   // log X-Forwarded-For (if behing a balancer) or repote IP
@@ -86,7 +89,8 @@ func New(config ...Config) fiber.Handler {
 
 		remoteIP := c.IP()
 		dumploggerCtx := sublog.With().
-			// Str("pid", pid).
+			Time(zerolog.TimestampFieldName, stop).
+			Str("pid", pid).
 			Str("id", rid).
 			Str("logger", "request").
 			Str("protocol", c.Protocol()).
