@@ -50,8 +50,7 @@ func TestNew(t *testing.T) {
 	}))
 
 	app.Get("/ok", func(c *fiber.Ctx) error {
-		c.SendString("ok")
-		return nil
+		return c.SendString("ok")
 	})
 
 	app.Get("/warn", func(c *fiber.Ctx) error {
@@ -66,7 +65,7 @@ func TestNew(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		app.Listen(":3000")
+		_ = app.Listen(":3000")
 	}()
 	wg.Wait()
 	time.Sleep(10 * time.Millisecond)
@@ -89,8 +88,7 @@ func BenchmarkStatic(b *testing.B) {
 	}))
 
 	app.Get("/", func(c *fiber.Ctx) error {
-		c.SendString("ok")
-		return nil
+		return c.SendString("ok")
 	})
 
 	h := app.Handler()
@@ -156,8 +154,7 @@ func BenchmarkCustomWithAuth(b *testing.B) {
 
 	app.Get("/", func(c *fiber.Ctx) error {
 		c.Context().SetUserValue("test", "test")
-		c.SendString("ok")
-		return nil
+		return c.SendString("ok")
 	})
 
 	h := app.Handler()

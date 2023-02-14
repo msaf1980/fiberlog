@@ -51,6 +51,7 @@ import (
 )
 
 func main() {
+  logger := zerolog.New(os.Stdout)
   app := fiber.New()
 
   // Default
@@ -66,7 +67,7 @@ func main() {
 
   // Custom Config
   app.Use(fiberlog.New(fiberlog.Config{
-    Logger: &zerolog.New(os.Stdout),
+    Logger: &logger,
     Next: func(ctx *fiber.Ctx) bool {
       // skip if we hit /private
       return ctx.Path() == "/private"
@@ -80,7 +81,7 @@ func main() {
     Tags:            []string{"test"},
   }))
 
-  app.Listen(3000)
+  logger.Fatal().Err(app.Listen(":3000"))
 }
 ```
 

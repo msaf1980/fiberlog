@@ -39,8 +39,7 @@ func main() {
 	}))
 
 	app.Get("/ok", func(c *fiber.Ctx) error {
-		c.SendString("ok")
-		return nil
+		return c.SendString("ok")
 	})
 
 	app.Get("/warn", func(c *fiber.Ctx) error {
@@ -51,5 +50,5 @@ func main() {
 		return fiber.ErrInternalServerError
 	})
 
-	app.Listen(":3000")
+	logger.Fatal().Err(app.Listen(":3000"))
 }
